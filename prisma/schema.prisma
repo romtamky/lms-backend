@@ -1,0 +1,55 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+// Thêm đoạn này để test kết nối
+model User {
+  id         Int            @id @default(autoincrement())
+  phone      String         @unique
+  password   String
+  role       String         @default("student")
+  createdAt  DateTime       @default(now())
+  progresses UserProgress[]
+}
+
+model Lesson {
+  id         Int            @id @default(autoincrement())
+  title      String
+  videoUrl   String
+  orderIndex Int
+  questions  Question[]
+  progresses UserProgress[]
+}
+
+model Question {
+  id            Int      @id @default(autoincrement())
+  content       String
+  optionA       String   @default("") // Nội dung đáp án A
+  optionB       String   @default("") // Nội dung đáp án B
+  optionC       String   @default("") // Nội dung đáp án C
+  optionD       String   @default("") // Nội dung đáp án D
+  correctAnswer String
+  lessonId      Int
+  lesson        Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+}
+model UserProgress {
+  id           Int      @id @default(autoincrement())
+  userId       Int
+  lessonId     Int
+  maxWatchTime Float    @default(0) // Lưu số giây xem xa nhất
+  isVideoDone  Boolean  @default(false)
+  isQuizPassed Boolean  @default(false)
+  
+  user         User     @relation(fields: [userId], references: [id])
+  lesson       Lesson   @relation(fields: [lessonId], references: [id])
+}
