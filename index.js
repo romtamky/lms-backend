@@ -12,21 +12,53 @@ app.use(express.json());
 
 // Kiểm tra Server
 app.get("/", (req, res) => {
-  res.send("Xin chào! Server LMS đang hoạt động ngon lành!");
+  res.send("Xin chào! Server LMS Đa Ngôn Ngữ đang hoạt động ngon lành!");
+});
+
+// ==================================================
+// TÍNH NĂNG MỚI: QUẢN LÝ NGÔN NGỮ (KHÓA HỌC)
+// ==================================================
+
+// API 0.1: LẤY DANH SÁCH CÁC NGÔN NGỮ ĐỂ HIỂN THỊ RA TRANG CHỦ
+app.get("/api/languages", async (req, res) => {
+  try {
+    const languages = await prisma.language.findMany();
+    res.json({ success: true, data: languages });
+  } catch (error) {
+    res.status(500).json({ error: "Lỗi lấy danh sách khóa học!" });
+  }
+});
+
+// API 0.2: ADMIN TẠO THÊM KHÓA HỌC NGÔN NGỮ MỚI
+app.post("/api/admin/languages", async (req, res) => {
+  const { name, code, imageUrl } = req.body;
+  if (!name || !code) {
+    return res.status(400).json({ error: "Vui lòng nhập tên và mã ngôn ngữ!" });
+  }
+  try {
+    const newLang = await prisma.language.create({
+      data: { name, code, imageUrl },
+    });
+    res.json({
+      success: true,
+      message: "Thêm khóa học thành công!",
+      data: newLang,
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Lỗi khi thêm khóa học mới!" });
+  }
 });
 
 // --------------------------------------------------
-// API 1: ĐĂNG KÝ TÀI KHOẢN MỚI
+// API 1: ĐĂNG KÝ TÀI KHOẢN MỚI (Giữ nguyên)
 // --------------------------------------------------
 app.post("/api/register", async (req, res) => {
   const { phone, password } = req.body;
-
   if (!phone || !password) {
     return res
       .status(400)
       .json({ error: "Vui lòng nhập đủ số điện thoại và mật khẩu!" });
   }
-
   try {
     const existingUser = await prisma.user.findUnique({
       where: { phone: phone },
@@ -36,7 +68,6 @@ app.post("/api/register", async (req, res) => {
         .status(400)
         .json({ error: "🚨 Số điện thoại này đã được đăng ký!" });
     }
-
     const hashedPassword = crypto
       .createHash("sha256")
       .update(password)
@@ -44,7 +75,6 @@ app.post("/api/register", async (req, res) => {
     const newUser = await prisma.user.create({
       data: { phone: phone, password: hashedPassword },
     });
-
     console.log("🎉 Đã đăng ký tài khoản mới:", newUser.phone);
     res.json({ success: true, message: "Đăng ký thành công!", data: newUser });
   } catch (error) {
@@ -54,26 +84,22 @@ app.post("/api/register", async (req, res) => {
 });
 
 // --------------------------------------------------
-// API 2: ĐĂNG NHẬP VÀO HỆ THỐNG
+// API 2: ĐĂNG NHẬP VÀO HỆ THỐNG (Giữ nguyên)
 // --------------------------------------------------
 app.post("/api/login", async (req, res) => {
   const { phone, password } = req.body;
-
   if (!phone || !password) {
     return res
       .status(400)
       .json({ error: "Vui lòng nhập đủ số điện thoại và mật khẩu!" });
   }
-
   try {
     const user = await prisma.user.findUnique({ where: { phone: phone } });
-
     if (!user) {
       return res
         .status(404)
         .json({ error: "🚨 Số điện thoại chưa được đăng ký!" });
     }
-
     const hashedPassword = crypto
       .createHash("sha256")
       .update(password)
@@ -83,7 +109,6 @@ app.post("/api/login", async (req, res) => {
         .status(401)
         .json({ error: "🔒 Sai mật khẩu! Vui lòng thử lại." });
     }
-
     console.log("👋 Người dùng đăng nhập thành công:", user.phone);
     res.json({ success: true, message: "Đăng nhập thành công", data: user });
   } catch (error) {
@@ -93,16 +118,25 @@ app.post("/api/login", async (req, res) => {
 });
 
 // --------------------------------------------------
-// API 3: LẤY DANH SÁCH BÀI HỌC VÀ TRẠNG THÁI (TRANG CHỦ)
+// API 3: LẤY DANH SÁCH BÀI HỌC THEO NGÔN NGỮ
 // --------------------------------------------------
 app.get("/api/courses/progress", async (req, res) => {
   const userId = parseInt(req.query.userId);
+  const languageId = req.query.languageId
+    ? parseInt(req.query.languageId)
+    : null;
+
   if (!userId) return res.status(400).json({ error: "Thiếu userId" });
 
   try {
+    // 🛠️ ĐÃ CẬP NHẬT: Lọc bài học theo LanguageId
+    const whereCondition = languageId ? { languageId: languageId } : {};
+
     const lessons = await prisma.lesson.findMany({
+      where: whereCondition,
       orderBy: { orderIndex: "asc" },
     });
+
     const progresses = await prisma.userProgress.findMany({
       where: { userId: userId },
     });
@@ -137,7 +171,7 @@ app.get("/api/courses/progress", async (req, res) => {
 });
 
 // --------------------------------------------------
-// API 4: LẤY CHI TIẾT BÀI HỌC VÀ CÂU HỎI (KÈM 4 ĐÁP ÁN)
+// API 4: LẤY CHI TIẾT BÀI HỌC VÀ CÂU HỎI
 // --------------------------------------------------
 app.get("/api/lessons/:id", async (req, res) => {
   const lessonId = parseInt(req.params.id);
@@ -154,8 +188,12 @@ app.get("/api/lessons/:id", async (req, res) => {
       return res.status(404).json({ error: "Không tìm thấy bài học này!" });
 
     if (currentLesson.orderIndex > 1) {
+      // 🛠️ ĐÃ CẬP NHẬT: Phải kiểm tra bài trước đó CÙNG NGÔN NGỮ
       const prevLesson = await prisma.lesson.findFirst({
-        where: { orderIndex: currentLesson.orderIndex - 1 },
+        where: {
+          orderIndex: currentLesson.orderIndex - 1,
+          languageId: currentLesson.languageId, // Đảm bảo không nhảy lộn ngôn ngữ
+        },
       });
       if (prevLesson) {
         const prevProgress = await prisma.userProgress.findFirst({
@@ -193,26 +231,22 @@ app.get("/api/lessons/:id", async (req, res) => {
 });
 
 // --------------------------------------------------
-// API 5: LƯU TIẾN ĐỘ VIDEO (CHỐNG TUA)
+// API 5 & API 6: LƯU TIẾN ĐỘ & NỘP BÀI (Giữ nguyên logic cực xịn của bạn)
 // --------------------------------------------------
 app.post("/api/progress/ping", async (req, res) => {
   const { userId, lessonId, currentTime, isEnded } = req.body;
   if (!userId || !lessonId)
     return res.status(400).json({ error: "Thiếu thông tin!" });
-
   try {
     let progress = await prisma.userProgress.findFirst({
       where: { userId: userId, lessonId: lessonId },
     });
-
     if (!progress) {
       progress = await prisma.userProgress.create({
         data: { userId: userId, lessonId: lessonId, maxWatchTime: 0 },
       });
     }
-
     const newMaxTime = Math.max(progress.maxWatchTime, currentTime);
-
     await prisma.userProgress.update({
       where: { id: progress.id },
       data: {
@@ -220,37 +254,28 @@ app.post("/api/progress/ping", async (req, res) => {
         isVideoDone: isEnded ? true : progress.isVideoDone,
       },
     });
-
     res.json({ success: true, maxWatchTime: newMaxTime });
   } catch (error) {
     res.status(500).json({ error: "Lỗi cập nhật tiến độ!" });
   }
 });
 
-// --------------------------------------------------
-// API 6: NỘP BÀI VÀ CHẤM ĐIỂM (ĐÃ FIX LỖI UPSERT AN TOÀN)
-// --------------------------------------------------
 app.post("/api/quiz/submit", async (req, res) => {
   const { userId, lessonId, userAnswers } = req.body;
   if (!userId || !lessonId || !userAnswers)
     return res.status(400).json({ error: "Thiếu thông tin nộp bài!" });
-
   try {
     const lesson = await prisma.lesson.findUnique({
       where: { id: parseInt(lessonId) },
       include: { questions: true },
     });
-
-    // Giới hạn 10 câu
     const QUIZ_LIMIT = 10;
     const totalQuestionsInExam = Math.min(QUIZ_LIMIT, lesson.questions.length);
-
     if (userAnswers.length < totalQuestionsInExam) {
       return res
         .status(400)
         .json({ error: "Dữ liệu nộp bài không hợp lệ (thiếu câu hỏi)!" });
     }
-
     let correctCount = 0;
     userAnswers.forEach((userAns) => {
       const originalQuestion = lesson.questions.find(
@@ -263,17 +288,12 @@ app.post("/api/quiz/submit", async (req, res) => {
         correctCount++;
       }
     });
-
-    // Mốc qua bài: 2/3 tổng số câu thi
     const passThreshold = Math.ceil((totalQuestionsInExam * 2) / 3);
     const isPassed = correctCount >= passThreshold;
-
     if (isPassed) {
-      // CÁCH LƯU TIẾN ĐỘ AN TOÀN (KHÔNG DÙNG UPSERT)
       const existingProgress = await prisma.userProgress.findFirst({
         where: { userId: parseInt(userId), lessonId: parseInt(lessonId) },
       });
-
       if (existingProgress) {
         await prisma.userProgress.update({
           where: { id: existingProgress.id },
@@ -289,7 +309,6 @@ app.post("/api/quiz/submit", async (req, res) => {
           },
         });
       }
-
       return res.json({
         passed: true,
         message: `🎉 Chúc mừng! Bạn đúng ${correctCount}/${totalQuestionsInExam} câu. Đã đủ điều kiện qua bài!`,
@@ -310,12 +329,15 @@ app.post("/api/quiz/submit", async (req, res) => {
 // KHU VỰC DÀNH RIÊNG CHO QUẢN TRỊ VIÊN (ADMIN)
 // ==================================================
 
-// API 7: LẤY DANH SÁCH BÀI HỌC CHO TRANG ADMIN EDIT
+// API 7: LẤY DANH SÁCH BÀI HỌC (ĐÃ KÈM THÔNG TIN NGÔN NGỮ)
 app.get("/api/admin/lessons", async (req, res) => {
   try {
     const lessons = await prisma.lesson.findMany({
-      include: { questions: true },
-      orderBy: { orderIndex: "asc" },
+      include: { questions: true, language: true }, // Lấy kèm tên khóa học để dễ nhìn
+      orderBy: [
+        { languageId: "asc" }, // Sắp xếp theo khóa học trước
+        { orderIndex: "asc" }, // Rồi mới sắp xếp theo bài
+      ],
     });
     res.json({ data: lessons });
   } catch (error) {
@@ -323,9 +345,9 @@ app.get("/api/admin/lessons", async (req, res) => {
   }
 });
 
-// API 8: THÊM BÀI HỌC MỚI (LƯU ĐỦ 4 ĐÁP ÁN)
+// API 8: THÊM BÀI HỌC MỚI (CÓ LƯU THÊM LANGUAGE ID)
 app.post("/api/admin/lessons", async (req, res) => {
-  const { title, videoUrl, orderIndex, questions } = req.body;
+  const { title, videoUrl, orderIndex, languageId, questions } = req.body;
 
   if (
     !title ||
@@ -347,6 +369,7 @@ app.post("/api/admin/lessons", async (req, res) => {
         title: title,
         videoUrl: videoUrl,
         orderIndex: parseInt(orderIndex),
+        languageId: languageId ? parseInt(languageId) : null, // 🛠️ ĐÃ THÊM: Lưu ID ngôn ngữ
         questions: {
           create: questions.map((q) => ({
             content: q.content,
@@ -370,10 +393,10 @@ app.post("/api/admin/lessons", async (req, res) => {
   }
 });
 
-// API 9: SỬA BÀI HỌC CŨ (CẬP NHẬT 4 ĐÁP ÁN)
+// API 9: SỬA BÀI HỌC CŨ (CÓ CẬP NHẬT LANGUAGE ID)
 app.put("/api/admin/lessons/:id", async (req, res) => {
   const { id } = req.params;
-  const { title, videoUrl, orderIndex, questions } = req.body;
+  const { title, videoUrl, orderIndex, languageId, questions } = req.body;
 
   try {
     await prisma.question.deleteMany({ where: { lessonId: parseInt(id) } });
@@ -384,6 +407,7 @@ app.put("/api/admin/lessons/:id", async (req, res) => {
         title,
         videoUrl,
         orderIndex: parseInt(orderIndex),
+        languageId: languageId ? parseInt(languageId) : null, // 🛠️ ĐÃ THÊM: Cập nhật ngôn ngữ
         questions: {
           create: questions.map((q) => ({
             content: q.content,
