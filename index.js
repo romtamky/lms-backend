@@ -19,7 +19,6 @@ app.get("/", (req, res) => {
 // TÍNH NĂNG MỚI: QUẢN LÝ NGÔN NGỮ (KHÓA HỌC)
 // ==================================================
 
-// API 0.1: LẤY DANH SÁCH CÁC NGÔN NGỮ ĐỂ HIỂN THỊ RA TRANG CHỦ
 app.get("/api/languages", async (req, res) => {
   try {
     const languages = await prisma.language.findMany();
@@ -29,7 +28,6 @@ app.get("/api/languages", async (req, res) => {
   }
 });
 
-// API 0.2: ADMIN TẠO THÊM KHÓA HỌC NGÔN NGỮ MỚI
 app.post("/api/admin/languages", async (req, res) => {
   const { name, code, imageUrl } = req.body;
   if (!name || !code) {
@@ -50,7 +48,7 @@ app.post("/api/admin/languages", async (req, res) => {
 });
 
 // --------------------------------------------------
-// API 1: ĐĂNG KÝ TÀI KHOẢN MỚI (Giữ nguyên)
+// API 1: ĐĂNG KÝ TÀI KHOẢN MỚI
 // --------------------------------------------------
 app.post("/api/register", async (req, res) => {
   const { phone, password } = req.body;
@@ -84,7 +82,7 @@ app.post("/api/register", async (req, res) => {
 });
 
 // --------------------------------------------------
-// API 2: ĐĂNG NHẬP VÀO HỆ THỐNG (Giữ nguyên)
+// API 2: ĐĂNG NHẬP VÀO HỆ THỐNG
 // --------------------------------------------------
 app.post("/api/login", async (req, res) => {
   const { phone, password } = req.body;
@@ -129,7 +127,6 @@ app.get("/api/courses/progress", async (req, res) => {
   if (!userId) return res.status(400).json({ error: "Thiếu userId" });
 
   try {
-    // 🛠️ ĐÃ CẬP NHẬT: Lọc bài học theo LanguageId
     const whereCondition = languageId ? { languageId: languageId } : {};
 
     const lessons = await prisma.lesson.findMany({
@@ -188,11 +185,10 @@ app.get("/api/lessons/:id", async (req, res) => {
       return res.status(404).json({ error: "Không tìm thấy bài học này!" });
 
     if (currentLesson.orderIndex > 1) {
-      // 🛠️ ĐÃ CẬP NHẬT: Phải kiểm tra bài trước đó CÙNG NGÔN NGỮ
       const prevLesson = await prisma.lesson.findFirst({
         where: {
           orderIndex: currentLesson.orderIndex - 1,
-          languageId: currentLesson.languageId, // Đảm bảo không nhảy lộn ngôn ngữ
+          languageId: currentLesson.languageId,
         },
       });
       if (prevLesson) {
@@ -231,7 +227,7 @@ app.get("/api/lessons/:id", async (req, res) => {
 });
 
 // --------------------------------------------------
-// API 5 & API 6: LƯU TIẾN ĐỘ & NỘP BÀI (Giữ nguyên logic cực xịn của bạn)
+// API 5 & API 6: LƯU TIẾN ĐỘ & NỘP BÀI
 // --------------------------------------------------
 app.post("/api/progress/ping", async (req, res) => {
   const { userId, lessonId, currentTime, isEnded } = req.body;
@@ -264,18 +260,20 @@ app.post("/api/quiz/submit", async (req, res) => {
   const { userId, lessonId, userAnswers } = req.body;
   if (!userId || !lessonId || !userAnswers)
     return res.status(400).json({ error: "Thiếu thông tin nộp bài!" });
+  
   try {
     const lesson = await prisma.lesson.findUnique({
       where: { id: parseInt(lessonId) },
       include: { questions: true },
     });
-    const QUIZ_LIMIT = 10;
-    const totalQuestionsInExam = Math.min(QUIZ_LIMIT, lesson.questions.length);
-    if (userAnswers.length < totalQuestionsInExam) {
-      return res
-        .status(400)
-        .json({ error: "Dữ liệu nộp bài không hợp lệ (thiếu câu hỏi)!" });
-    }
+    
+    // 🛠️ ĐÃ CẬP NHẬT: Lấy toàn bộ số lượng câu hỏi thực tế (không giới hạn 10 câu nữa)
+    const totalQuestionsInExam = lesson.questions.length;
+    
+    // Lưu ý: Đã xóa phần báo lỗi nếu thiếu câu trả lời. 
+    // Lý do: Nếu người dùng hết 20s không kịp click, mảng userAnswers sẽ bị thiếu câu đó, 
+    // và hệ thống vẫn tiến hành chấm (câu thiếu xem như sai).
+
     let correctCount = 0;
     userAnswers.forEach((userAns) => {
       const originalQuestion = lesson.questions.find(
@@ -288,8 +286,11 @@ app.post("/api/quiz/submit", async (req, res) => {
         correctCount++;
       }
     });
-    const passThreshold = Math.ceil((totalQuestionsInExam * 2) / 3);
-    const isPassed = correctCount >= passThreshold;
+
+    // 🛠️ ĐÃ CẬP NHẬT: Phải đúng 100% số câu hỏi mới qua bài
+    const passThreshold = totalQuestionsInExam;
+    const isPassed = correctCount >= passThreshold && totalQuestionsInExam > 0;
+
     if (isPassed) {
       const existingProgress = await prisma.userProgress.findFirst({
         where: { userId: parseInt(userId), lessonId: parseInt(lessonId) },
@@ -311,12 +312,12 @@ app.post("/api/quiz/submit", async (req, res) => {
       }
       return res.json({
         passed: true,
-        message: `🎉 Chúc mừng! Bạn đúng ${correctCount}/${totalQuestionsInExam} câu. Đã đủ điều kiện qua bài!`,
+        message: `🎉 Chúc mừng! Bạn đúng ${correctCount}/${totalQuestionsInExam} câu (100%). Đã đủ điều kiện qua bài!`,
       });
     } else {
       return res.json({
         passed: false,
-        message: `❌ Bạn chỉ đúng ${correctCount}/${totalQuestionsInExam} câu. Cần đúng ít nhất ${passThreshold} câu để qua bài. Vui lòng thử lại!`,
+        message: `❌ Bạn chỉ đúng ${correctCount}/${totalQuestionsInExam} câu. Cần đúng 100% để qua bài. Vui lòng thử lại!`,
       });
     }
   } catch (error) {
@@ -329,14 +330,13 @@ app.post("/api/quiz/submit", async (req, res) => {
 // KHU VỰC DÀNH RIÊNG CHO QUẢN TRỊ VIÊN (ADMIN)
 // ==================================================
 
-// API 7: LẤY DANH SÁCH BÀI HỌC (ĐÃ KÈM THÔNG TIN NGÔN NGỮ)
 app.get("/api/admin/lessons", async (req, res) => {
   try {
     const lessons = await prisma.lesson.findMany({
-      include: { questions: true, language: true }, // Lấy kèm tên khóa học để dễ nhìn
+      include: { questions: true, language: true },
       orderBy: [
-        { languageId: "asc" }, // Sắp xếp theo khóa học trước
-        { orderIndex: "asc" }, // Rồi mới sắp xếp theo bài
+        { languageId: "asc" },
+        { orderIndex: "asc" },
       ],
     });
     res.json({ data: lessons });
@@ -345,7 +345,6 @@ app.get("/api/admin/lessons", async (req, res) => {
   }
 });
 
-// API 8: THÊM BÀI HỌC MỚI (CÓ LƯU THÊM LANGUAGE ID)
 app.post("/api/admin/lessons", async (req, res) => {
   const { title, videoUrl, orderIndex, languageId, questions } = req.body;
 
@@ -369,7 +368,7 @@ app.post("/api/admin/lessons", async (req, res) => {
         title: title,
         videoUrl: videoUrl,
         orderIndex: parseInt(orderIndex),
-        languageId: languageId ? parseInt(languageId) : null, // 🛠️ ĐÃ THÊM: Lưu ID ngôn ngữ
+        languageId: languageId ? parseInt(languageId) : null,
         questions: {
           create: questions.map((q) => ({
             content: q.content,
@@ -393,7 +392,6 @@ app.post("/api/admin/lessons", async (req, res) => {
   }
 });
 
-// API 9: SỬA BÀI HỌC CŨ (CÓ CẬP NHẬT LANGUAGE ID)
 app.put("/api/admin/lessons/:id", async (req, res) => {
   const { id } = req.params;
   const { title, videoUrl, orderIndex, languageId, questions } = req.body;
@@ -407,7 +405,7 @@ app.put("/api/admin/lessons/:id", async (req, res) => {
         title,
         videoUrl,
         orderIndex: parseInt(orderIndex),
-        languageId: languageId ? parseInt(languageId) : null, // 🛠️ ĐÃ THÊM: Cập nhật ngôn ngữ
+        languageId: languageId ? parseInt(languageId) : null,
         questions: {
           create: questions.map((q) => ({
             content: q.content,
